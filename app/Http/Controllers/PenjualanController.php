@@ -128,7 +128,7 @@ class PenjualanController extends Controller
                     'message' => 'Transaksi berhasil disimpan',
                     'id_penjualan' => $penjualan->id
                 ]);
-            ]);
+        });
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
