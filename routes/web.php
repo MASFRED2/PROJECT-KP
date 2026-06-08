@@ -52,7 +52,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Halaman utama kasir
     Route::get('/transaksi', [PenjualanController::class, 'index'])->name('penjualan.index');
     // API untuk ambil data barang saat di-scan (untuk kebutuhan JavaScript)
-    Route::get('/api/barang/{barcode}', [PenjualanController::class, 'getBarang']);
+    Route::get('/kasir/get-barang/{barcode}', [PenjualanController::class, 'getBarang'])->name('kasir.get-barang');
     // Simpan transaksi
     Route::post('/transaksi/simpan', [PenjualanController::class, 'store'])->name('penjualan.store');
     });

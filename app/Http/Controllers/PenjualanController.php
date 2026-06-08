@@ -44,26 +44,29 @@ class PenjualanController extends Controller
     }
 
     public function getBarang($barcode)
-    {
-        $barang = Barang::where('barcode', $barcode)->first();
+{
+    // Cari barang berdasarkan kolom barcode
+    $barang = Barang::where('barcode', $barcode)->first();
 
-        if ($barang) {
-            $diskon = $barang->diskon_aktif();
-            
-            return response()->json([
-                'status'  => 'success',
-                'data'    => $barang,
-                'diskon'  => $diskon ? $diskon->nilai_diskon : 0,
-                'jenis_diskon' => $diskon ? $diskon->jenis_diskon : null
-            ]);
-        }
-
-        return response()->json(['status' => 'error', 'message' => 'Barang tidak ditemukan']);
+    if ($barang) {
+        // Amankan response, kirim data mentah barangnya saja terlebih dahulu
+        return response()->json([
+            'status'  => 'success',
+            'data'    => $barang
+        ]);
     }
+
+    return response()->json([
+        'status' => 'error', 
+        'message' => 'Barang dengan barcode ' . $barcode . ' tidak ditemukan di database!'
+    ]);
+}
 
     public function cetakStruk($id)
     {
-        $penjualan = Penjualan::with(['detail_penjualan.barang', 'kasir'])->find($id);
+        // Pastikan cabang dan pelanggan ikut dipanggil (Eager Loading)
+        $penjualan = Penjualan::with(['detail_penjualan.barang', 'kasir', 'cabang', 'pelanggan'])->findOrFail($id);
+        
         return view('admin.penjualan.struk', compact('penjualan'));
     }
 

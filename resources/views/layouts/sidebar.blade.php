@@ -74,6 +74,12 @@
                         <p>Set Diskon</p>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="{{ route('pelanggan.index') }}" class="nav-link {{ request()->is('pelanggan*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-users"></i>
+                        <p>Member</p>
+                    </a>
+                </li>
 
                 <li class="nav-header">LAPORAN & ANALITIK</li>
                 @php

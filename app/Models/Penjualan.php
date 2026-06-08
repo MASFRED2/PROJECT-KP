@@ -38,4 +38,9 @@ class Penjualan extends Model
     {
         return $this->belongsTo(User::class, 'kasir_id');
     }
+    // Relasi ke user pelanggan (pembeli)
+    public function pelanggan(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'pelanggan_id');
+    }
 }

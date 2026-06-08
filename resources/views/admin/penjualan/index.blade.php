@@ -106,141 +106,227 @@
 @endsection
 
 @push('scripts')
+<!-- ENGINE KASIR JAVASCRIPT (DIOPTIMALKAN) -->
 <script>
-    let keranjang = [];
+let keranjang = [];
 
-    // Fungsi saat barcode di-scan
-    $('#scan_barcode').on('keypress', function(e) {
-        if (e.which == 13) { // 13 adalah tombol Enter (otomatis dikirim scanner)
-            let barcode = $(this).val();
-            tambahBarang(barcode);
-            $(this).val(''); // Kosongkan input lagi
+document.addEventListener("DOMContentLoaded", function() {
+    const inputBarcode = document.getElementById('scan_barcode');
+    const nominalBayar = document.getElementById('nominal_bayar');
+    const btnProses = document.getElementById('btn_proses');
+
+    // 1. Tangkap ketukan dari Barcode Scanner
+    inputBarcode.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            let barcode = this.value.trim();
+            if (barcode !== '') {
+                ambilDataBarang(barcode);
+            }
+            this.value = ''; 
         }
     });
 
-    function tambahBarang(barcode) {
-        $.get(`/api/barang/${barcode}`, function(res) {
-            if (res.status == 'success') {
-                let barang = res.data;
-                let harga = barang.harga_jual;
-                
-                // Hitung diskon jika ada
-                if (res.diskon > 0) {
-                    if (res.jenis_diskon == 'persentase') {
-                        harga = harga - (harga * (res.diskon / 100));
-                    } else {
-                        harga = harga - res.diskon;
-                    }
+    // 2. Ambil data barang dari server Laravel
+    // 2. Ambil data barang dari server Laravel
+    function ambilDataBarang(barcode) {
+        // Trik jitu: Biarkan Laravel yang merakit URL-nya secara otomatis
+        let url = "{{ route('kasir.get-barang', 'KODE_BARCODE') }}";
+        url = url.replace('KODE_BARCODE', barcode);
+
+        fetch(url)
+            .then(response => {
+                // Tangkap jika terjadi eror HTTP sebelum diproses ke JSON
+                if (!response.ok) {
+                    throw new Error(`Terjadi kesalahan jaringan (Status HTTP: ${response.status})`);
                 }
-
-                // Masukkan ke array keranjang
-                keranjang.push({
-                    id: barang.id,
-                    nama: barang.nama_barang,
-                    harga: harga,
-                    qty: 1
-                });
-
-                renderKeranjang();
-            } else {
-                alert('Barang tidak ditemukan!');
-            }
-        });
+                return response.json();
+            })
+            .then(res => {
+                if (res.status === 'success') {
+                    tambahKeKeranjang(res.data);
+                } else {
+                    alert(res.message);
+                }
+            })
+            .catch(err => {
+                console.error("Gagal memuat barang:", err);
+                alert("Sistem gagal menghubungi database. Pastikan barcode benar dan rute aktif.");
+            });
     }
 
-    function renderKeranjang() {
-        let html = '';
-        let total = 0;
+    // 3. Masukkan item ke memori keranjang
+    function tambahKeKeranjang(barang) {
+        let index = keranjang.findIndex(item => item.id === barang.id);
         
+        // Memastikan nama kolom harga sesuai dengan database (harga_jual / harga)
+        let hargaItem = parseFloat(barang.harga_jual || barang.harga);
+
+        if (index !== -1) {
+            if (keranjang[index].qty >= barang.stok_total) {
+                alert(`Stok produk ${barang.nama_barang} terbatas! Batas sisa: ${barang.stok_total}`);
+                return;
+            }
+            keranjang[index].qty++;
+        } else {
+            if (barang.stok_total < 1) {
+                alert(`Produk ${barang.nama_barang} habis total!`);
+                return;
+            }
+            keranjang.push({
+                id: barang.id,
+                nama_barang: barang.nama_barang,
+                harga: hargaItem,
+                stok_maksimal: barang.stok_total,
+                qty: 1
+            });
+        }
+        renderKeranjang();
+    }
+
+    // 4. Render Tabel (Hanya digambar ulang saat ada barang baru/dihapus)
+    window.renderKeranjang = function() {
+        const body = document.getElementById('keranjang_body');
+        body.innerHTML = '';
+
         keranjang.forEach((item, index) => {
             let subtotal = item.harga * item.qty;
-            total += subtotal;
-            html += `
-                <tr>
-                    <td>${item.nama}</td>
-                    <td>Rp ${item.harga.toLocaleString('id-ID')}</td>
-                    <td><input type="number" value="${item.qty}" class="form-control form-control-sm"></td>
-                    <td>Rp ${subtotal.toLocaleString('id-ID')}</td>
-                    <td><button class="btn btn-danger btn-sm" onclick="hapusItem(${index})">&times;</button></td>
+
+            body.innerHTML += `
+                <tr style="border-bottom: 1px solid #E2E8F0;">
+                    <td class="font-weight-bold text-dark py-3">${item.nama_barang}</td>
+                    <td>Rp ${new Intl.NumberFormat('id-ID').format(item.harga)}</td>
+                    <td>
+                        <!-- Menggunakan oninput agar merespons seketika tanpa perlu klik luar -->
+                        <input type="number" class="form-control form-control-sm text-center font-weight-bold" 
+                               value="${item.qty}" min="1" max="${item.stok_maksimal}" 
+                               oninput="updateQty(${index}, this)" style="width: 70px; border-radius: 6px;">
+                    </td>
+                    <td class="font-weight-bold text-dark" id="subtotal_${index}">Rp ${new Intl.NumberFormat('id-ID').format(subtotal)}</td>
+                    <td class="text-center">
+                        <button type="button" class="btn btn-sm btn-light text-danger" onclick="hapusItem(${index})">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
                 </tr>
             `;
         });
 
-        $('#keranjang_body').html(html);
-        $('#total_tampilan').text('Rp ' + total.toLocaleString('id-ID'));
+        hitungTotalKeseluruhan();
     }
 
-    function hapusItem(index) {
+    // 5. Fitur Update Real-time Tanpa Menghilangkan Fokus Kursor
+    window.updateQty = function(index, element) {
+        let qtyBaru = parseInt(element.value);
+        
+        // Mencegah input kosong atau huruf
+        if(isNaN(qtyBaru) || qtyBaru < 1) return;
+
+        // Proteksi ketat agar qty tidak melebihi stok fisik rak
+        if(qtyBaru > keranjang[index].stok_maksimal) {
+            alert(`Maksimal stok tersedia hanya ${keranjang[index].stok_maksimal} pcs!`);
+            element.value = keranjang[index].stok_maksimal;
+            qtyBaru = keranjang[index].stok_maksimal;
+        }
+
+        keranjang[index].qty = qtyBaru;
+        
+        // Update Teks Subtotal hanya di baris tersebut
+        let subtotalBaru = keranjang[index].harga * qtyBaru;
+        document.getElementById(`subtotal_${index}`).innerText = 'Rp ' + new Intl.NumberFormat('id-ID').format(subtotalBaru);
+        
+        hitungTotalKeseluruhan();
+    }
+
+    window.hapusItem = function(index) {
         keranjang.splice(index, 1);
         renderKeranjang();
     }
 
-    // Fungsi untuk memproses transaksi
-$('#btn_proses').on('click', function() {
-    if (keranjang.length === 0) {
-        alert('Keranjang masih kosong!');
-        return;
-    }
-
-    let metode = $('#metode_bayar').val();
-    let total = totalBelanja(); // Fungsi pembantu hitung total
-    let bayar = $('#nominal_bayar').val();
-    let kembalian = bayar - total;
-
-    if (metode === 'cash' && bayar < total) {
-        alert('Uang bayar kurang!');
-        return;
-    }
-
-    // Jika metode QRIS atau Debit, kita munculkan loading simulasi
-    if (metode !== 'cash') {
-        $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Menunggu Pembayaran...');
+    // 6. Hitung Total Pembayaran & Kembalian
+    window.hitungTotalKeseluruhan = function() {
+        let totalHarga = 0;
+        keranjang.forEach(item => {
+            totalHarga += (item.harga * item.qty);
+        });
         
-        // Simulasi menunggu pembayaran otomatis selama 3 detik
-        setTimeout(() => {
-            kirimDataKeServer(metode, total, total, 0);
-        }, 3000);
-    } else {
-        kirimDataKeServer(metode, total, bayar, kembalian);
+        // Simpan ke atribut memori elemen agar akurat
+        document.getElementById('total_tampilan').setAttribute('data-total', totalHarga);
+        document.getElementById('total_tampilan').innerText = 'Rp ' + new Intl.NumberFormat('id-ID').format(totalHarga);
+        
+        hitungKembalian();
     }
-});
 
-function totalBelanja() {
-    return keranjang.reduce((sum, item) => sum + (item.harga * item.qty), 0);
-}
+    nominalBayar.addEventListener('input', hitungKembalian);
+    
+    function hitungKembalian() {
+        let totalHarga = parseFloat(document.getElementById('total_tampilan').getAttribute('data-total')) || 0;
+        let bayar = parseFloat(nominalBayar.value) || 0;
+        let kembalian = bayar - totalHarga;
 
-function kirimDataKeServer(metode, total, bayar, kembalian) {
-    $.ajax({
-        url: "{{ route('penjualan.store') }}",
-        method: "POST",
-        data: {
+        if (kembalian >= 0 && totalHarga > 0) {
+            document.getElementById('kembalian_tampilan').innerText = 'Rp ' + new Intl.NumberFormat('id-ID').format(kembalian);
+        } else {
+            document.getElementById('kembalian_tampilan').innerText = 'Rp 0';
+        }
+    }
+
+
+    // 7. Simpan Transaksi POS via AJAX
+
+    btnProses.addEventListener('click', function() {
+        if (keranjang.length === 0) return alert('Keranjang belanja masih kosong!');
+        
+        let totalHarga = parseFloat(document.getElementById('total_tampilan').getAttribute('data-total')) || 0;
+        let bayar = parseFloat(nominalBayar.value) || 0;
+        let metode = document.getElementById('metode_bayar').value;
+
+        if (metode === 'cash' && bayar < totalHarga) {
+            return alert('Uang tunai yang diterima kurang dari nilai total tagihan!');
+        }
+
+        // Ubah teks tombol menjadi loading agar kasir tahu sistem sedang bekerja
+        let originalText = btnProses.innerHTML;
+        btnProses.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Sedang Memproses...';
+        btnProses.disabled = true;
+
+        let dataTransaksi = {
             _token: "{{ csrf_token() }}",
             keranjang: keranjang,
             metode_pembayaran: metode,
-            pelanggan_id: $('#pelanggan_id').val(),
-            total_harga: total,
-            total_bayar: bayar,
-            kembalian: kembalian
-        },
-        success: function(res) {
+            pelanggan_id: document.getElementById('pelanggan_id').value || null,
+            total_harga: totalHarga,
+            total_bayar: metode === 'cash' ? bayar : totalHarga,
+            kembalian: metode === 'cash' ? (bayar - totalHarga) : 0
+        };
+
+        fetch("{{ route('penjualan.store') }}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRF-TOKEN": "{{ csrf_token() }}"
+            },
+            body: JSON.stringify(dataTransaksi)
+        })
+        .then(response => response.json())
+        .then(res => {
+            btnProses.innerHTML = originalText;
+            btnProses.disabled = false;
+
             if (res.status === 'success') {
-                alert('Transaksi Berhasil!');
-                // Fungsi untuk cetak struk (akan kita buat di langkah berikutnya)
-                cetakStruk(res.id_penjualan);
-                location.reload(); // Refresh halaman setelah sukses
+                // Alihkan (Redirect) tab yang sama ke halaman struk secara paksa
+                window.location.href = `/transaksi/cetak/${res.id_penjualan}`;
+            } else {
+                alert('Gagal menyimpan transaksi: ' + res.message);
             }
-        },
-        error: function(err) {
-            alert('Gagal simpan transaksi: ' + err.responseJSON.message);
-            $('#btn_proses').prop('disabled', false).text('PROSES TRANSAKSI');
-        }
+        })
+        .catch(err => {
+            btnProses.innerHTML = originalText;
+            btnProses.disabled = false;
+            console.error("Eror POST transaksi:", err);
+            alert("Terjadi kesalahan fatal pada server. Cek log console!");
+        });
     });
-}
-
-function cetakStruk(id) {
-    let url = "{{ url('/transaksi/cetak') }}/" + id;
-    window.open(url, '_blank', 'width=300,height=600');
-}
-
+});
 </script>
 @endpush
